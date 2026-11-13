@@ -1,42 +1,55 @@
-# Habot Connect FZCO — Junior Cloud & DevOps Engineer Hiring Project
+# Secure Student Onboarding & Analytics Pipeline
 
-**Author:** Dipak Shimpi
-**Contact:** GitHub — https://github.com/dipakshimpi
+**Author:** Dipak Shimpi — Cloud & DevOps Engineer
+**GitHub:** [dipakshimpi](https://github.com/dipakshimpi)
+
+---
 
 ## Overview
 
-This project addresses the two failures described in the Habot Connect FZCO hiring scenario:
+A cloud-native, fail-closed student onboarding platform that validates, secures, and streams onboarding data into a managed analytics pipeline — with full infrastructure automation and CI enforcement.
 
-- Unencrypted API credentials were introduced into application code.
-- A database schema mismatch broke downstream analytics.
+Student onboarding data is sensitive. Invalid or malformed records break downstream analytics. Leaked credentials compromise the entire system. This project addresses all three risks through automated controls at every layer of the stack.
 
-The solution applies automated controls at three stages:
+---
 
-- GitHub Actions prevents insecure or non-compliant code from progressing.
-- Django REST Framework and DCYN prevent invalid onboarding data from progressing into the downstream analytics pipeline.
-- Terraform provisions the required Google Cloud infrastructure and access controls.
+## Problem Statement
 
-## Architecture
+- Student onboarding data is sensitive and must be validated before reaching analytics systems.
+- Incorrect or malformed records silently break downstream reporting.
+- Credential or configuration leakage must be blocked before code is ever merged.
+- Manual review alone is not a reliable safety boundary.
 
-### Development Flow
+---
+
+## Solution
+
+- **Fail-closed CI pipeline** — blocks insecure code, bad formatting, and invalid configuration before merge.
+- **REST API validation** — Django serializers and DCYN rules reject invalid onboarding records at the application layer.
+- **Cloud infrastructure** — Google Cloud provisioned end-to-end with Terraform.
+- **Secure data pipeline** — validated records streamed through Pub/Sub into BigQuery with RBAC and row-level security.
+
+---
+
+## System Architecture
+
+### CI / Development Boundary
 
 ```text
 Developer
     ↓
 GitHub Repository
     ↓
-GitHub Actions
+GitHub Actions — Fail-Closed Validation
+    ├── Python code quality   (Flake8)
+    ├── Python formatting     (Black --check)
+    ├── YAML validation       (yamllint)
+    ├── Terraform format      (terraform fmt -check)
+    ├── Terraform validation  (terraform validate)
+    ├── Frontend file check
+    └── Secret scanning       (Gitleaks)
     ↓
-Poka-Yoke Checks
-    ├── Python code quality (Flake8)
-    ├── Python formatting (Black --check)
-    ├── YAML validation (yamllint)
-    ├── Terraform formatting and validation (terraform fmt / terraform validate)
-    ├── Frontend static assets verification
-    └── Hardcoded secret detection (Gitleaks)
-    ↓
-PASS → Continue
-FAIL → Stop
+PASS → Continue  |  FAIL → Blocked
 ```
 
 ### Data Flow
@@ -44,140 +57,87 @@ FAIL → Stop
 ```text
 Student
     ↓
-Frontend
+Frontend (HTML / CSS / JavaScript)
     ↓
-Django REST Framework
+Django REST Framework API
     ↓
-Model Serializer
+DRF Serializer + DCYN Validation
+    ├── Valid   → Pub/Sub Topic
+    └── Invalid → HTTP 400 Rejected
     ↓
-DCYN Validation
-    ├── YES → Accept
-    └── NO  → Reject
+Pub/Sub (AVRO schema)
     ↓
-Pub/Sub
-    ↓
-BigQuery D1 Staged/Enforced
+BigQuery D1 — Staged / Enforced
     ↓
 Analytics
 ```
 
 Terraform provisions the infrastructure and identity boundaries supporting these flows.
 
-## Task 1 — Secure Infrastructure Provisioning
+---
 
-Terraform provisions the Google Cloud environment required by the application and data pipeline.
+## Security Controls
 
-### Infrastructure Components
+| Boundary | Risk | Control |
+|---|---|---|
+| Development | Hardcoded credentials | Gitleaks secret scan |
+| Development | Bad code / formatting | Flake8, Black, yamllint |
+| Development | Invalid Terraform | terraform fmt + validate |
+| Application | Invalid onboarding data | DRF Serializer + DCYN |
+| Data | Schema mismatch | Pub/Sub AVRO schema |
+| Data | Unauthorised access | BigQuery row-level security |
+| Infrastructure | Excess permissions | Least-privilege IAM + Terraform |
 
-- Google Cloud Storage D0 Raw Landing
-- BigQuery D1 Staged/Enforced (student onboarding table)
-- Google App Engine application
-- Dedicated service accounts
-- Least-privilege Identity and Access Management
-- Conditional Identity and Access Management bindings
-- BigQuery row-level security
-- Storage versioning
-- Storage lifecycle configuration
+---
 
-**Detailed documentation:** [`docs/d0-raw-landing.md`](docs/d0-raw-landing.md), [`docs/d1-staged-enforced.md`](docs/d1-staged-enforced.md)
+## Core Features
 
-## Task 2 — Poka-Yoke Fail-Closed Build Gate
+- **Fail-closed CI** — any validation failure stops the pipeline; deployment is blocked.
+- **DCYN validation** — deterministic Yes/No rules reject invalid records before they enter the pipeline.
+- **Schema contract** — Pub/Sub AVRO schema + BigQuery enforced schema prevent silent data drift.
+- **Row-level security** — BigQuery access policy scoped by session identity.
+- **Terraform IaC** — all cloud resources provisioned and version-controlled.
+- **Least-privilege IAM** — separate service accounts for ingestion and analytics with minimal roles.
 
-The GitHub Actions workflow provides an automated mistake-proofing boundary for application and infrastructure changes.
+---
 
-The pipeline is intentionally fail-closed. A failed validation produces a non-zero result and prevents the workflow from progressing.
+## Tech Stack
 
-### Automated Checks
+| Layer | Technology |
+|---|---|
+| CI/CD | GitHub Actions |
+| Secret scanning | Gitleaks |
+| Code quality | Flake8, Black, yamllint |
+| Backend API | Django REST Framework (Python) |
+| Data validation | DCYN (custom rule engine) |
+| Messaging | Google Cloud Pub/Sub (AVRO) |
+| Analytics store | Google BigQuery |
+| Object storage | Google Cloud Storage |
+| Infrastructure | Terraform |
+| Hosting | Google App Engine |
+| Frontend | HTML, CSS, JavaScript |
 
-The workflow performs:
+---
 
-- Python code quality linting (Flake8)
-- Python formatting validation (`black --check backend`)
-- YAML validation (`yamllint .github/workflows/ci.yml`)
-- Terraform formatting validation (`terraform fmt -check -recursive`)
-- Terraform initialization (`terraform init -backend=false`)
-- Terraform validation (`terraform validate`)
-- Frontend source files verification (`test -f index.html/script.js/style.css`)
-- Hardcoded secret detection (Gitleaks)
+## Infrastructure Components
 
-### Fail-Closed Logic
+Terraform provisions and manages:
 
-```text
-Code Change
-    ↓
-Automated Checks
-    ├── PASS → Continue
-    └── FAIL → STOP → Deployment blocked
-```
+- Google Cloud Storage — D0 Raw Landing bucket (versioning, lifecycle, public access prevention)
+- BigQuery — D1 Staged/Enforced dataset and table with explicit schema
+- Pub/Sub — topic with AVRO schema and BigQuery subscription
+- Google App Engine — backend application service
+- IAM — dedicated service accounts with least-privilege roles
+- BigQuery row-level access policy
 
-The purpose is to prevent human review from being the final protection against mistakes.
+**Detailed docs:** [`docs/infrastructure.md`](docs/infrastructure.md), [`docs/data-pipeline.md`](docs/data-pipeline.md)
 
-**Detailed documentation:** [`docs/poka-yoke-ci.md`](docs/poka-yoke-ci.md)
-
-## Task 3 — Schema Mapping and DCYN Validation
-
-Student onboarding data passes through deterministic validation before entering the downstream analytics flow.
-
-DCYN means Deconstructed Clean Yes/No. The validation rules are converted into explicit binary decisions.
-
-```text
-Incoming JSON
-      ↓
-Django REST Framework Serializer
-      ↓
-Field Validation
-      ↓
-DCYN
-      ├── YES → Accept
-      └── NO  → Reject
-```
-
-The application schema is treated as a contract with the downstream data pipeline.
-
-```text
-Django
-   ↓
-Validated Record
-   ↓
-Pub/Sub
-   ↓
-BigQuery D1
-```
-
-**Detailed documentation:** [`docs/task-3-dcyn-schema-validation.md`](docs/task-3-dcyn-schema-validation.md)
-
-## Frontend
-
-The project includes a lightweight student onboarding interface using HTML, CSS, and JavaScript. The frontend sends onboarding information to the Django REST Framework API.
-
-### Run the Backend
-
-From the backend directory:
-
-```bash
-python manage.py runserver
-```
-
-The backend runs at `http://127.0.0.1:8000/`.
-
-### Run the Frontend
-
-Open a second terminal and run from the frontend directory:
-
-```bash
-python -m http.server 5500
-```
-
-Open `http://127.0.0.1:5500/`.
-
-The frontend submits data to `http://127.0.0.1:8000/api/student-onboarding/`.
-
-**Detailed frontend documentation:** [`docs/Frontend_Readme.md`](docs/Frontend_Readme.md)
+---
 
 ## Project Structure
 
 ```text
-habotconnect-devops-project/
+secure-student-onboarding-pipeline/
 │
 ├── .github/
 │   └── workflows/
@@ -199,13 +159,11 @@ habotconnect-devops-project/
 │       └── views.py
 │
 ├── frontend/
-│   ├── README.md
 │   ├── index.html
 │   ├── script.js
 │   └── style.css
 │
 ├── terraform/
-│   ├── README.md
 │   ├── main.tf
 │   ├── variables.tf
 │   ├── outputs.tf
@@ -216,50 +174,95 @@ habotconnect-devops-project/
 │       └── d1-staged-enforced/
 │
 ├── docs/
-│   ├── Frontend_Readme.md
-│   ├── d0-raw-landing.md
-│   ├── d1-staged-enforced.md
-│   ├── poka-yoke-ci.md
-│   └── task-3-dcyn-schema-validation.md
+│   ├── infrastructure.md
+│   ├── data-pipeline.md
+│   ├── ci-validation.md
+│   ├── data-validation.md
+│   └── frontend.md
 │
-├── e2e-query.sql
-└── slides/
+└── e2e-query.sql
 ```
 
-## Engineering Logic
+---
 
-The project applies mistake-proofing at three explicit boundaries, separating code safety, application validation, and downstream data enforcement:
+## Local Setup
 
-| Boundary | Trigger | Control | Outcome |
-|---|---|---|---|
-| Development | Developer mistake (e.g. formatting error, invalid YAML/Terraform, hardcoded secret) | GitHub Actions — Flake8, Black, yamllint, terraform fmt/validate, frontend verification, Gitleaks | Blocked before merge |
-| Application | Invalid onboarding data | Django REST Framework Serializer + DCYN | Blocked before acceptance |
-| Data | Validated application data | Pub/Sub (AVRO schema) → BigQuery D1 (Row-Level Security) | Flows through to Analytics |
+### Prerequisites
 
-## Key Engineering Principle
+- Python 3.13+
+- Terraform 1.x
+- Google Cloud SDK (for deployment)
 
-The system prevents mistakes instead of relying on people to remember to prevent them — at each of the three boundaries above: the development boundary (GitHub Actions), the application-data boundary (DRF + DCYN), and the infrastructure/identity boundary (Terraform).
+### Run the Backend
 
-## Submission Deliverables
+```bash
+cd backend
+pip install -r requirements.txt
+python manage.py runserver
+```
 
-The project includes:
+Backend available at `http://127.0.0.1:8000/`
 
-- Completed Terraform infrastructure code
-- GitHub Actions YAML workflow
-- Django REST Framework Python implementation
-- Frontend implementation
-- Task documentation
-- Architecture presentation
-- Fail-Closed build demonstration
+### Run the Frontend
 
-The architecture presentation is limited to 15 slides as required by the project instructions.
+Open a second terminal:
 
-Before submission, the repository should be reviewed for:
+```bash
+cd frontend
+python -m http.server 5500
+```
 
-- Full name and contact information
-- No placeholders
-- No unnecessary abbreviations
-- Clear engineering logic
-- Correct folder structure
-- Fail-Closed demonstration
-- Complete Terraform, YAML, and Python deliverables
+Frontend available at `http://127.0.0.1:5500/`
+
+The frontend submits data to `http://127.0.0.1:8000/api/student-onboarding/`
+
+### Infrastructure (Terraform)
+
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+---
+
+## Why It Matters
+
+- Sensitive student data is validated and secured before it reaches analytics.
+- Schema mismatches are caught at the API layer — not discovered after data is already broken downstream.
+- Credentials and configuration drift are blocked automatically before any merge.
+- Infrastructure is repeatable, version-controlled, and auditable.
+- Security is enforced by default, not by memory.
+
+---
+
+## Project Impact
+
+- Reduced data quality risk through deterministic DCYN validation before ingestion.
+- Prevented credential exposure through automated secret scanning on every push.
+- Eliminated configuration drift with Terraform-managed infrastructure.
+- Improved analytics trust by enforcing schema contracts end-to-end.
+- Automated the full validation and deployment pipeline with zero manual gate reliance.
+
+---
+
+## Future Enhancements
+
+- Add schema evolution compatibility checks to CI pipeline.
+- Implement dead-letter queue handling for Pub/Sub failures.
+- Add observability layer (Cloud Monitoring / alerting).
+- Extend DCYN rules with configurable rule sets.
+- Add automated end-to-end integration tests.
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [`docs/infrastructure.md`](docs/infrastructure.md) | Cloud Storage, BigQuery, IAM, Terraform resources |
+| [`docs/data-pipeline.md`](docs/data-pipeline.md) | Pub/Sub, BigQuery schema, data flow |
+| [`docs/ci-validation.md`](docs/ci-validation.md) | CI pipeline, fail-closed logic, all checks |
+| [`docs/data-validation.md`](docs/data-validation.md) | DCYN validation, serializer rules |
+| [`docs/frontend.md`](docs/frontend.md) | Frontend setup and API communication |
